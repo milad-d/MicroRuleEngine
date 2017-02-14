@@ -3,13 +3,15 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Linq.Expressions;
+using System.Reflection;
 using System.Text.RegularExpressions;
 
 namespace MicroRuleEngine
 {
     public class MRE
     {
-        private ExpressionType[] nestedOperators = new ExpressionType[] { ExpressionType.And, ExpressionType.AndAlso, ExpressionType.Or, ExpressionType.OrElse };
+        private ExpressionType[] nestedOperators = new ExpressionType[]
+        {ExpressionType.And, ExpressionType.AndAlso, ExpressionType.Or, ExpressionType.OrElse};
 
         public bool PassesRules<T>(IList<Rule> rules, T toInspect)
         {
@@ -27,7 +29,8 @@ namespace MicroRuleEngine
         Expression GetExpressionForRule<T>(Rule r, ParameterExpression param)
         {
             ExpressionType nestedOperator;
-            if (ExpressionType.TryParse(r.Operator, out nestedOperator) && nestedOperators.Contains(nestedOperator) && r.Rules != null && r.Rules.Any())
+            if (ExpressionType.TryParse(r.Operator, out nestedOperator) && nestedOperators.Contains(nestedOperator) &&
+                r.Rules != null && r.Rules.Any())
                 return BuildNestedExpression<T>(r.Rules, param, nestedOperator);
             else
                 return BuildExpr<T>(r, param);
@@ -45,7 +48,7 @@ namespace MicroRuleEngine
             List<Expression> expressions = new List<Expression>();
             foreach (var r in rules)
             {
-                expressions.Add(GetExpressionForRule<T>(r,param));
+                expressions.Add(GetExpressionForRule<T>(r, param));
             }
 
             Expression expr = BinaryExpression(expressions, operation);
@@ -54,7 +57,8 @@ namespace MicroRuleEngine
 
         Expression BinaryExpression(IList<Expression> expressions, ExpressionType operationType)
         {
-            Func<Expression, Expression, Expression> methodExp = new Func<Expression, Expression, Expression>((x1, x2) => Expression.And(x1, x2));
+            Func<Expression, Expression, Expression> methodExp =
+                new Func<Expression, Expression, Expression>((x1, x2) => Expression.And(x1, x2));
             switch (operationType)
             {
                 case ExpressionType.Or:
@@ -108,12 +112,12 @@ namespace MicroRuleEngine
             Type propType = null;
 
             ExpressionType tBinary;
-            if (string.IsNullOrEmpty(r.MemberName))//check is against the object itself
+            if (string.IsNullOrEmpty(r.MemberName)) //check is against the object itself
             {
                 propExpression = param;
                 propType = propExpression.Type;
             }
-            else if (r.MemberName.Contains('.'))//Child property
+            else if (r.MemberName.Contains('.')) //Child property
             {
                 String[] childProperties = r.MemberName.Split('.');
                 var property = typeof(T).GetProperty(childProperties[0]);
@@ -129,7 +133,7 @@ namespace MicroRuleEngine
                 }
                 propType = propExpression.Type;
             }
-            else//Property
+            else //Property
             {
                 propExpression = Expression.PropertyOrField(param, r.MemberName);
                 propType = propExpression.Type;
@@ -145,20 +149,20 @@ namespace MicroRuleEngine
             {
                 return Expression.Call(
                     typeof(Regex).GetMethod("IsMatch",
-                        new[] { typeof(string), typeof(string), typeof(RegexOptions) }),
+                        new[] {typeof(string), typeof(string), typeof(RegexOptions)}),
                     propExpression,
                     Expression.Constant(r.TargetValue, typeof(string)),
                     Expression.Constant(RegexOptions.IgnoreCase, typeof(RegexOptions))
-                );
+                    );
             }
             else //Invoke a method on the Property
             {
-                var inputs = r.Inputs.Select(x=> x.GetType()).ToArray();
+                var inputs = r.Inputs.Select(x => x.GetType()).ToArray();
                 var methodInfo = propType.GetMethod(r.Operator, inputs);
                 if (!methodInfo.IsGenericMethod)
-                    inputs = null;//Only pass in type information to a Generic Method
+                    inputs = null; //Only pass in type information to a Generic Method
                 var expressions = r.Inputs.Select(x => Expression.Constant(x)).ToArray();
-                return Expression.Call(propExpression, r.Operator,inputs,expressions);
+                return Expression.Call(propExpression, r.Operator, inputs, expressions);
             }
         }
 
@@ -171,7 +175,87 @@ namespace MicroRuleEngine
             }
             else
             {
-                right = Expression.Constant(Convert.ChangeType(value, propType));
+
+                ////Coalesce to get actual property type...
+                //Type t = propType;
+                //t = Nullable.GetUnderlyingType(t) ?? t;
+                ////Coalesce to set the safe value using default(t) or the safe type.
+                //var safeValue = value == null ? default(ValueType) : Convert.ChangeType(value, t);
+
+                //Orchid Changes
+                string varTypeStr = propType.ToString();
+                if (varTypeStr.Contains("Nullable"))
+                {
+                    if (varTypeStr.Contains("Boolean"))
+                    {
+                        Boolean temp = Boolean.Parse(value);
+                        right = Expression.Constant(temp, typeof(Boolean?));
+                    }
+                    else if (varTypeStr.Contains("Byte"))
+                    {
+                        Byte temp = Byte.Parse(value);
+                        right = Expression.Constant(temp, typeof(Byte?));
+                    }
+                    else if (varTypeStr.Contains("SByte"))
+                    {
+                        SByte temp = SByte.Parse(value);
+                        right = Expression.Constant(temp, typeof(SByte?));
+                    }
+                    else if (varTypeStr.Contains("Char"))
+                    {
+                        Char temp = Char.Parse(value);
+                        right = Expression.Constant(temp, typeof(Char?));
+                    }
+                    else if (varTypeStr.Contains("Decimal"))
+                    {
+                        Decimal temp = Decimal.Parse(value);
+                        right = Expression.Constant(temp, typeof(Decimal?));
+                    }
+                    else if (varTypeStr.Contains("Double"))
+                    {
+                        Double temp = Double.Parse(value);
+                        right = Expression.Constant(temp, typeof(Double?));
+                    }
+                    else if (varTypeStr.Contains("Single"))
+                    {
+                        Single temp = Single.Parse(value);
+                        right = Expression.Constant(temp, typeof(Single?));
+                    }
+                    else if (varTypeStr.Contains("Int32"))
+                    {
+                        Int32 temp = Int32.Parse(value);
+                        right = Expression.Constant(temp, typeof(Int32?));
+                    }
+                    else if (varTypeStr.Contains("UInt32"))
+                    {
+                        UInt32 temp = UInt32.Parse(value);
+                        right = Expression.Constant(temp, typeof(UInt32?));
+                    }
+                    else if (varTypeStr.Contains("Int64"))
+                    {
+                        Int64 temp = Int64.Parse(value);
+                        right = Expression.Constant(temp, typeof(Int64?));
+                    }
+                    else if (varTypeStr.Contains("UInt64"))
+                    {
+                        UInt64 temp = UInt64.Parse(value);
+                        right = Expression.Constant(temp, typeof(UInt64?));
+                    }
+                    else if (varTypeStr.Contains("Int16"))
+                    {
+                        Int16 temp = Int16.Parse(value);
+                        right = Expression.Constant(temp, typeof(Int16?));
+                    }
+                    else if (varTypeStr.Contains("UInt16"))
+                    {
+                        UInt16 temp = UInt16.Parse(value);
+                        right = Expression.Constant(temp, typeof(UInt16?));
+                    }
+                }
+                else
+                {
+                    right = Expression.Constant(Convert.ChangeType(value, propType));
+                }
             }
             return right;
         }
